@@ -131,17 +131,6 @@ if (location.hostname.search("github.io") != -1 && striped_pathname != ""){
 
 
 
-<script>
-striped_pathname = location.pathname.replace(/\/+$/, "");
-if(striped_pathname != "/academic-homepage"){
-    document.getElementById("url-debug-message").classList.remove('d-none');
-}
-document.querySelectorAll(".root-path-text").forEach(function(element){
-    element.textContent = striped_pathname;
-});
-</script>
-
-
 
     <div class="row mt-3">
     <div class="col">
