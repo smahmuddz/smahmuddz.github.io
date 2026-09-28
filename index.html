@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <link rel="icon" href="/favicon/favicon-32x32.png" />
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Sabbir Mahmud Afridi</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="config.js"></script>
+    <script>
+      // Light by default; saved user choice wins
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem("sma_theme") ||
+          (window.CFG && CFG.DEFAULT_THEME) ||
+          "light";
+      } catch (e) {}
+      window.MathJax = {
+        tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]] },
+        svg: { fontCache: "global" },
+        startup: { typeset: false },
+      };
+    </script>
+    <script
+      defer
+      src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"
+    ></script>
+  </head>
+  <body>
+    <nav>
+      <div class="w">
+        <a class="brand" href="#about" id="brand"></a>
+        <button id="tg" title="Toggle theme" aria-label="Toggle theme">
+          ◐
+        </button>
+        <button id="mb" aria-label="Menu" aria-expanded="false">☰</button>
+        <div id="nl">
+          <a class="l" href="#about">about</a
+          ><a class="l" href="#publications">publications</a
+          ><a class="l" href="#blog">blog</a><a class="l" href="#cv">cv</a
+          ><a class="l" href="#teaching">teaching</a>
+        </div>
+      </div>
+    </nav>
+    <main><div class="w" id="app"></div></main>
+    <footer>
+      <div class="w">
+        © <span id="fy"></span> <span id="fn"></span>. Inspired by
+        <a href="https://alshedivat.github.io/al-folio/">al-folio</a>. ·
+        <a href="#admin">admin</a>
+      </div>
+    </footer>
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
