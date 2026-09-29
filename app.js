@@ -358,8 +358,10 @@ try {
   authed = sessionStorage.getItem("sma_auth") == "1";
 } catch (x) {}
 const tx = () => {
-  if (window.MathJax && MathJax.typesetPromise)
-    MathJax.typesetPromise().catch(() => {});
+  if (!window.MathJax?.typesetPromise) return;
+  MathJax.startup.promise
+    .then(() => MathJax.typesetPromise([$("#app")]))
+    .catch(() => {});
 };
 function md(s) {
   const C = [],
