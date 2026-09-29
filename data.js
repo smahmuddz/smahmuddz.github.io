@@ -9,14 +9,15 @@ const DEF = {
     "Natural Language Processing, Large Language Models, Deep Learning, Cloud Computing",
   posts: [
     {
-    "slug": "how-does-rag-actually-work",
-    "title": "How Does RAG Actually Work? Building an AI That Can Search Your Own Documents",
-    "date": "2026-09-28",
-    "tags": "RAG, LLM, AI",
-    "status": "published",
-    "pdf": "",
-    "body": "# How Does RAG Actually Work?\n\n## Teaching an AI to Search Your Own Documents\n\nImagine you have 500 research papers sitting on your computer.\n\nYou ask an AI:\n\n> \"What are the main limitations of the methods discussed in these papers?\"\n\nThere is a problem.\n\nA language model does not automatically have access to those files.\n\nYou could copy and paste the papers into the model, but that quickly becomes impractical.\n\nWhat if you have:\n\n* 500 research papers?\n* 10,000 documents?\n* A constantly changing knowledge base?\n* Private company documentation?\n\nThis is where an important idea in modern AI engineering becomes useful:\n\n**Retrieval-Augmented Generation (RAG).**\n\nThe basic idea is surprisingly simple:\n\n$$\n\\text{Question}\n\\rightarrow\n\\text{Search}\n\\rightarrow\n\\text{Relevant Information}\n\\rightarrow\n\\text{Answer}\n$$\n\nInstead of forcing a language model to remember everything, we give it a way to find the information it needs.\n\n---\n\n## 1. The Problem: Language Models Don't Know Your Files\n\nLarge language models are trained on enormous collections of text.\n\nBut suppose you write a new research paper today.\n\nThe model was not necessarily trained on it.\n\nSo if you ask:\n\n> \"According to my latest research report, what was the accuracy of Model A?\"\n\nthe model cannot magically know the answer.\n\nThere are different ways to solve this problem.\n\nOne option is fine-tuning.\n\nAnother is to provide the entire document directly as context.\n\nRAG takes a different approach:\n\n> **Find the relevant information first, then ask the model to reason over it.**\n\nThis separation between **retrieval** and **generation** is the core idea behind RAG.\n\n---\n\n## 2. The RAG Pipeline\n\nA simple RAG system can be thought of as:\n\n**Documents → Chunks → Embeddings → Vector Database → Retrieval → LLM → Answer**\n\nThe process has four major steps:\n\n1. Split documents into smaller pieces.\n2. Convert those pieces into numerical vectors.\n3. Search for vectors similar to the user's question.\n4. Give the retrieved information to the language model.\n\nNow let's unpack each step.\n\n---\n\n## 3. Step One: Chunking Documents\n\nSuppose we have a 100-page PDF.\n\nSending the entire document to an AI model every time would be inefficient.\n\nInstead, we divide the document into smaller pieces called **chunks**.\n\nConceptually:\n\n```text\nDocument\n|\n+-- Chunk 1\n+-- Chunk 2\n+-- Chunk 3\n+-- Chunk 4\n|\n+-- ...\n|\n+-- Chunk 500\n```\n\nA chunk might contain a few hundred words.\n\nBut there is a catch.\n\nThe chunks should preserve enough context to remain meaningful.\n\nFor example, imagine splitting:\n\n> \"The proposed algorithm improves accuracy by\"\n\nfrom:\n\n> \"12.4% on the benchmark dataset.\"\n\nThe information has now been separated in a way that makes retrieval less useful.\n\nSo chunking is not just a preprocessing detail.\n\n**Good retrieval starts with good chunks.**\n\n---\n\n## 4. Step Two: Turning Text Into Numbers\n\nHere is where things get interesting.\n\nComputers do not naturally understand the meaning of:\n\n> \"The neural network achieved high accuracy.\"\n\nWe need a numerical representation.\n\nThis is where **embeddings** come in.\n\nAn embedding model maps text to a vector:\n\n$$\nf(\\text{text}) = \\mathbf{v}\n$$\n\nFor example, a sentence might be represented conceptually as:\n\n$$\n\\mathbf{v}\n=\n[\n0.21,\n-0.73,\n0.14,\n0.91,\n\\ldots\n]\n$$\n\nThe individual numbers are not particularly meaningful to us.\n\nWhat matters is the relationship between vectors.\n\n---\n\n## 5. Similar Meaning, Similar Vectors\n\nConsider these two sentences:\n\n> \"The neural network achieved 95% accuracy.\"\n\nand:\n\n> \"The model obtained an accuracy of 95%.\"\n\nThey use different words, but their meanings are very similar.\n\nIdeally, their embeddings should therefore be close together in vector space.\n\nOn the other hand:\n\n> \"The database uses a B-tree index.\"\n\nshould be much farther away.\n\nThis gives us an important intuition:\n\n$$\n\\text{Semantic Similarity}\n\\approx\n\\text{Vector Similarity}\n$$\n\nAnd that is what allows a computer to search documents by meaning rather than only matching exact keywords.\n\n---\n\n## 6. Cosine Similarity\n\nOne common way to compare two vectors is **cosine similarity**.\n\nSuppose we have two vectors:\n\n$$\n\\mathbf{a}\n=\n[a_1,a_2,\\ldots,a_n]\n$$\n\nand:\n\n$$\n\\mathbf{b}\n=\n[b_1,b_2,\\ldots,b_n]\n$$\n\nTheir cosine similarity is:\n\n$$\n\\operatorname{cosine}(\\mathbf{a},\\mathbf{b})\n=\n\\frac{\n\\mathbf{a}\\cdot\\mathbf{b}\n}{\n\\|\\mathbf{a}\\|\\|\\mathbf{b}\\|\n}\n$$\n\nSuppose our query produces:\n\n$$\nq\n$$\n\nand our database contains:\n\n$$\nd_1,d_2,d_3\n$$\n\nThe system might calculate:\n\n$$\n\\operatorname{sim}(q,d_1)=0.91\n$$\n\n$$\n\\operatorname{sim}(q,d_2)=0.72\n$$\n\n$$\n\\operatorname{sim}(q,d_3)=0.21\n$$\n\nThe first document is therefore a much stronger candidate.\n\n---\n\n## 7. Building the Knowledge Base\n\nOnce document chunks have been converted into embeddings, we store them in a vector database.\n\nConceptually, every entry contains something like:\n\n$$\n(\\text{embedding},\\text{text},\\text{metadata})\n$$\n\nFor example:\n\n```text\nVector:\n[0.12, -0.44, 0.81, ...]\n\nText:\n\"The proposed method reduces inference latency...\"\n\nMetadata:\n{\n    paper: \"efficient-transformers.pdf\",\n    page: 7\n}\n```\n\nThe metadata is especially useful for research systems.\n\nInstead of simply returning an answer, we can potentially tell the user:\n\n> \"This information came from page 7 of efficient-transformers.pdf.\"\n\nThat makes the system easier to verify.\n\n---\n\n## 8. What Happens When You Ask a Question?\n\nSuppose the user asks:\n\n> \"Which method reduces inference latency?\"\n\nThe question is first converted into an embedding:\n\n$$\nq=f(\\text{question})\n$$\n\nThe system then compares the query vector against the stored document vectors:\n\n$$\ns_i\n=\n\\operatorname{similarity}(q,d_i)\n$$\n\nThen it selects the most relevant results:\n\n$$\nD_k\n=\n\\operatorname{TopK}\n(s_1,s_2,\\ldots,s_n)\n$$\n\nFor example:\n\n$$\nD_k\n=\n\\{d_{12},d_{87},d_{203},d_{421}\\}\n$$\n\nThese retrieved documents become the context for the language model.\n\n---\n\n## 9. Retrieval + Generation\n\nThe final prompt can conceptually look like:\n\n```text\nContext:\n\n[Retrieved document 1]\n\n[Retrieved document 2]\n\n[Retrieved document 3]\n\nQuestion:\n\nWhich method reduces inference latency?\n\nAnswer:\n```\n\nThe model now has relevant information available.\n\nThe generation step can be represented as:\n\n$$\n\\boxed{\n\\text{Answer}\n=\n\\operatorname{LLM}\n(\n\\text{Question},\n\\text{Retrieved Context}\n)\n}\n$$\n\nThis is where the \"generation\" part of RAG comes from.\n\n---\n\n## 10. Why Not Just Use Keyword Search?\n\nTraditional search often depends heavily on lexical matching.\n\nSuppose the user searches:\n\n> \"reduce model latency\"\n\nA keyword-based system may prioritize documents containing those exact words.\n\nBut another document might say:\n\n> \"The proposed architecture significantly decreases inference time.\"\n\nThe meaning is similar even though the words are different.\n\nEmbedding-based search can potentially recognize that relationship.\n\nHowever, semantic search is not always better.\n\nKeyword search remains extremely useful for things such as:\n\n* Names\n* Error codes\n* Function names\n* Product IDs\n* Exact identifiers\n* Mathematical notation\n\nThis is why many practical systems combine both approaches.\n\nThis is known as **hybrid search**.\n\n---\n\n## 11. The Interesting Research Problem\n\nAt first, RAG looks mostly like an engineering problem.\n\nBut there is a deeper research question:\n\n> **What happens when retrieval is wrong?**\n\nSuppose the user asks a question and the retriever returns irrelevant documents.\n\nThe language model may still produce a fluent answer.\n\nBut fluent does not necessarily mean correct.\n\nThis leads to an important distinction:\n\n$$\n\\boxed{\n\\text{Good Generation}\n\\neq\n\\text{Good Retrieval}\n}\n$$\n\nA powerful language model cannot always compensate for poor evidence.\n\nTherefore, a RAG system can be evaluated at multiple levels:\n\n1. Did the system retrieve relevant information?\n2. Did the language model use that information correctly?\n3. Is the final answer actually supported by the retrieved evidence?\n\nThis turns RAG into a fascinating intersection of:\n\n$$\n\\text{NLP}\n+\n\\text{Information Retrieval}\n+\n\\text{Machine Learning}\n+\n\\text{Systems}\n$$\n\n---\n\n## 12. RAG Is More Than a Vector Database\n\nA basic RAG system may look like:\n\n$$\n\\text{Question}\n\\rightarrow\n\\text{Embedding}\n\\rightarrow\n\\text{Vector Search}\n\\rightarrow\n\\text{LLM}\n$$\n\nReal systems can become much more sophisticated.\n\nFor example:\n\n$$\n\\text{Query}\n\\rightarrow\n\\text{Query Expansion}\n\\rightarrow\n\\text{Retrieval}\n\\rightarrow\n\\text{Reranking}\n\\rightarrow\n\\text{Context Selection}\n\\rightarrow\n\\text{Generation}\n$$\n\nA reranker can examine retrieved candidates and determine which documents are actually most relevant.\n\nNow we have an optimization problem.\n\nWe want:\n\n$$\n\\max \\quad \\text{Answer Quality}\n$$\n\nwhile satisfying constraints such as:\n\n$$\n\\text{Latency} \\leq L\n$$\n\nand:\n\n$$\n\\text{Context Size} \\leq C\n$$\n\nSuddenly, RAG becomes much more than simply \"connecting a vector database to an LLM.\"\n\n---\n\n## 13. A Simple Mental Model\n\nHere is an easy way to remember RAG.\n\nImagine a student taking an exam.\n\nA normal language model is like a student who has studied an enormous amount of material but cannot open any books during the exam.\n\nA RAG system is like a student who has access to a well-organized library.\n\nThe student still needs reasoning ability.\n\nBut now they can search for relevant information before answering.\n\nSo:\n\n$$\n\\boxed{\n\\text{RAG}\n=\n\\text{Retrieval}\n+\n\\text{Context}\n+\n\\text{Generation}\n}\n$$\n\nThe interesting part is that improving any one of these components can potentially improve the overall system.\n\n---\n\n## 14. What Can You Build With RAG?\n\nOnce you understand the basic pipeline, you can build surprisingly useful systems.\n\nFor example:\n\n* A chatbot for research papers\n* A question-answering system for university documents\n* A private company knowledge assistant\n* A codebase search assistant\n* A legal document search system\n* A personal knowledge base\n* A literature-review assistant\n\nFor researchers, one particularly interesting application is scientific literature search.\n\nImagine having thousands of papers indexed as embeddings and asking:\n\n> \"Which papers discuss deterministic arithmetic in blockchain smart contracts?\"\n\nThe system could retrieve relevant passages instead of forcing the researcher to manually search thousands of PDFs.\n\n---\n\n## 15. What Should You Learn Next?\n\nIf this is your first introduction to RAG, the next concepts worth exploring are:\n\n1. **Embedding models**\n2. **Approximate Nearest Neighbor search**\n3. **FAISS and vector indexing**\n4. **Hybrid retrieval**\n5. **Reranking models**\n6. **Chunking strategies**\n7. **Retrieval evaluation**\n8. **Hallucination detection**\n9. **Long-context models**\n10. **RAG for scientific research**\n\nOne particularly interesting research question is:\n\n> **Can we automatically determine whether the retrieved evidence is sufficient to support an AI-generated answer?**\n\nThat question connects information retrieval, NLP, machine learning, and AI reliability.\n\n---\n\n## Conclusion\n\nRAG is built from a few surprisingly simple ideas.\n\nFirst, break documents into useful pieces.\n\nSecond, represent those pieces as vectors.\n\nThird, retrieve the pieces that are relevant to a question.\n\nFinally, give those pieces to a language model so that it can generate an answer grounded in the retrieved information.\n\nThe entire idea can be summarized as:\n\n$$\n\\boxed{\n\\text{Documents}\n\\rightarrow\n\\text{Embeddings}\n\\rightarrow\n\\text{Retrieval}\n\\rightarrow\n\\text{Context}\n\\rightarrow\n\\text{Generation}\n}\n$$\n\nBut the deeper idea is even simpler:\n\n> **Don't force an AI to remember everything. Give it a way to find what it needs.**\n\nThat simple principle is one of the reasons RAG has become such an important design pattern in modern NLP and AI systems.\n\nAnd perhaps the most interesting question is what comes next:\n\n> **How do we make AI systems know not only what to retrieve, but also whether what they retrieved is actually enough to answer?**\n"
-  },
+      slug: "how-does-rag-actually-work",
+      title:
+        "How Does RAG Actually Work? Building an AI That Can Search Your Own Documents",
+      date: "2026-09-28",
+      tags: "RAG, LLM, AI",
+      status: "published",
+      pdf: "",
+      body: '# How Does RAG Actually Work?\n\n## Teaching an AI to Search Your Own Documents\n\nImagine you have 500 research papers sitting on your computer.\n\nYou ask an AI:\n\n> "What are the main limitations of the methods discussed in these papers?"\n\nThere is a problem.\n\nA language model does not automatically have access to those files.\n\nYou could copy and paste the papers into the model, but that quickly becomes impractical.\n\nWhat if you have:\n\n* 500 research papers?\n* 10,000 documents?\n* A constantly changing knowledge base?\n* Private company documentation?\n\nThis is where an important idea in modern AI engineering becomes useful:\n\n**Retrieval-Augmented Generation (RAG).**\n\nThe basic idea is surprisingly simple:\n\n$$\n\\text{Question}\n\\rightarrow\n\\text{Search}\n\\rightarrow\n\\text{Relevant Information}\n\\rightarrow\n\\text{Answer}\n$$\n\nInstead of forcing a language model to remember everything, we give it a way to find the information it needs.\n\n---\n\n## 1. The Problem: Language Models Don\'t Know Your Files\n\nLarge language models are trained on enormous collections of text.\n\nBut suppose you write a new research paper today.\n\nThe model was not necessarily trained on it.\n\nSo if you ask:\n\n> "According to my latest research report, what was the accuracy of Model A?"\n\nthe model cannot magically know the answer.\n\nThere are different ways to solve this problem.\n\nOne option is fine-tuning.\n\nAnother is to provide the entire document directly as context.\n\nRAG takes a different approach:\n\n> **Find the relevant information first, then ask the model to reason over it.**\n\nThis separation between **retrieval** and **generation** is the core idea behind RAG.\n\n---\n\n## 2. The RAG Pipeline\n\nA simple RAG system can be thought of as:\n\n**Documents → Chunks → Embeddings → Vector Database → Retrieval → LLM → Answer**\n\nThe process has four major steps:\n\n1. Split documents into smaller pieces.\n2. Convert those pieces into numerical vectors.\n3. Search for vectors similar to the user\'s question.\n4. Give the retrieved information to the language model.\n\nNow let\'s unpack each step.\n\n---\n\n## 3. Step One: Chunking Documents\n\nSuppose we have a 100-page PDF.\n\nSending the entire document to an AI model every time would be inefficient.\n\nInstead, we divide the document into smaller pieces called **chunks**.\n\nConceptually:\n\n```text\nDocument\n|\n+-- Chunk 1\n+-- Chunk 2\n+-- Chunk 3\n+-- Chunk 4\n|\n+-- ...\n|\n+-- Chunk 500\n```\n\nA chunk might contain a few hundred words.\n\nBut there is a catch.\n\nThe chunks should preserve enough context to remain meaningful.\n\nFor example, imagine splitting:\n\n> "The proposed algorithm improves accuracy by"\n\nfrom:\n\n> "12.4% on the benchmark dataset."\n\nThe information has now been separated in a way that makes retrieval less useful.\n\nSo chunking is not just a preprocessing detail.\n\n**Good retrieval starts with good chunks.**\n\n---\n\n## 4. Step Two: Turning Text Into Numbers\n\nHere is where things get interesting.\n\nComputers do not naturally understand the meaning of:\n\n> "The neural network achieved high accuracy."\n\nWe need a numerical representation.\n\nThis is where **embeddings** come in.\n\nAn embedding model maps text to a vector:\n\n$$\nf(\\text{text}) = \\mathbf{v}\n$$\n\nFor example, a sentence might be represented conceptually as:\n\n$$\n\\mathbf{v}\n=\n[\n0.21,\n-0.73,\n0.14,\n0.91,\n\\ldots\n]\n$$\n\nThe individual numbers are not particularly meaningful to us.\n\nWhat matters is the relationship between vectors.\n\n---\n\n## 5. Similar Meaning, Similar Vectors\n\nConsider these two sentences:\n\n> "The neural network achieved 95% accuracy."\n\nand:\n\n> "The model obtained an accuracy of 95%."\n\nThey use different words, but their meanings are very similar.\n\nIdeally, their embeddings should therefore be close together in vector space.\n\nOn the other hand:\n\n> "The database uses a B-tree index."\n\nshould be much farther away.\n\nThis gives us an important intuition:\n\n$$\n\\text{Semantic Similarity}\n\\approx\n\\text{Vector Similarity}\n$$\n\nAnd that is what allows a computer to search documents by meaning rather than only matching exact keywords.\n\n---\n\n## 6. Cosine Similarity\n\nOne common way to compare two vectors is **cosine similarity**.\n\nSuppose we have two vectors:\n\n$$\n\\mathbf{a}\n=\n[a_1,a_2,\\ldots,a_n]\n$$\n\nand:\n\n$$\n\\mathbf{b}\n=\n[b_1,b_2,\\ldots,b_n]\n$$\n\nTheir cosine similarity is:\n\n$$\n\\operatorname{cosine}(\\mathbf{a},\\mathbf{b})\n=\n\\frac{\n\\mathbf{a}\\cdot\\mathbf{b}\n}{\n\\|\\mathbf{a}\\|\\|\\mathbf{b}\\|\n}\n$$\n\nSuppose our query produces:\n\n$$\nq\n$$\n\nand our database contains:\n\n$$\nd_1,d_2,d_3\n$$\n\nThe system might calculate:\n\n$$\n\\operatorname{sim}(q,d_1)=0.91\n$$\n\n$$\n\\operatorname{sim}(q,d_2)=0.72\n$$\n\n$$\n\\operatorname{sim}(q,d_3)=0.21\n$$\n\nThe first document is therefore a much stronger candidate.\n\n---\n\n## 7. Building the Knowledge Base\n\nOnce document chunks have been converted into embeddings, we store them in a vector database.\n\nConceptually, every entry contains something like:\n\n$$\n(\\text{embedding},\\text{text},\\text{metadata})\n$$\n\nFor example:\n\n```text\nVector:\n[0.12, -0.44, 0.81, ...]\n\nText:\n"The proposed method reduces inference latency..."\n\nMetadata:\n{\n    paper: "efficient-transformers.pdf",\n    page: 7\n}\n```\n\nThe metadata is especially useful for research systems.\n\nInstead of simply returning an answer, we can potentially tell the user:\n\n> "This information came from page 7 of efficient-transformers.pdf."\n\nThat makes the system easier to verify.\n\n---\n\n## 8. What Happens When You Ask a Question?\n\nSuppose the user asks:\n\n> "Which method reduces inference latency?"\n\nThe question is first converted into an embedding:\n\n$$\nq=f(\\text{question})\n$$\n\nThe system then compares the query vector against the stored document vectors:\n\n$$\ns_i\n=\n\\operatorname{similarity}(q,d_i)\n$$\n\nThen it selects the most relevant results:\n\n$$\nD_k\n=\n\\operatorname{TopK}\n(s_1,s_2,\\ldots,s_n)\n$$\n\nFor example:\n\n$$\nD_k\n=\n\\{d_{12},d_{87},d_{203},d_{421}\\}\n$$\n\nThese retrieved documents become the context for the language model.\n\n---\n\n## 9. Retrieval + Generation\n\nThe final prompt can conceptually look like:\n\n```text\nContext:\n\n[Retrieved document 1]\n\n[Retrieved document 2]\n\n[Retrieved document 3]\n\nQuestion:\n\nWhich method reduces inference latency?\n\nAnswer:\n```\n\nThe model now has relevant information available.\n\nThe generation step can be represented as:\n\n$$\n\\boxed{\n\\text{Answer}\n=\n\\operatorname{LLM}\n(\n\\text{Question},\n\\text{Retrieved Context}\n)\n}\n$$\n\nThis is where the "generation" part of RAG comes from.\n\n---\n\n## 10. Why Not Just Use Keyword Search?\n\nTraditional search often depends heavily on lexical matching.\n\nSuppose the user searches:\n\n> "reduce model latency"\n\nA keyword-based system may prioritize documents containing those exact words.\n\nBut another document might say:\n\n> "The proposed architecture significantly decreases inference time."\n\nThe meaning is similar even though the words are different.\n\nEmbedding-based search can potentially recognize that relationship.\n\nHowever, semantic search is not always better.\n\nKeyword search remains extremely useful for things such as:\n\n* Names\n* Error codes\n* Function names\n* Product IDs\n* Exact identifiers\n* Mathematical notation\n\nThis is why many practical systems combine both approaches.\n\nThis is known as **hybrid search**.\n\n---\n\n## 11. The Interesting Research Problem\n\nAt first, RAG looks mostly like an engineering problem.\n\nBut there is a deeper research question:\n\n> **What happens when retrieval is wrong?**\n\nSuppose the user asks a question and the retriever returns irrelevant documents.\n\nThe language model may still produce a fluent answer.\n\nBut fluent does not necessarily mean correct.\n\nThis leads to an important distinction:\n\n$$\n\\boxed{\n\\text{Good Generation}\n\\neq\n\\text{Good Retrieval}\n}\n$$\n\nA powerful language model cannot always compensate for poor evidence.\n\nTherefore, a RAG system can be evaluated at multiple levels:\n\n1. Did the system retrieve relevant information?\n2. Did the language model use that information correctly?\n3. Is the final answer actually supported by the retrieved evidence?\n\nThis turns RAG into a fascinating intersection of:\n\n$$\n\\text{NLP}\n+\n\\text{Information Retrieval}\n+\n\\text{Machine Learning}\n+\n\\text{Systems}\n$$\n\n---\n\n## 12. RAG Is More Than a Vector Database\n\nA basic RAG system may look like:\n\n$$\n\\text{Question}\n\\rightarrow\n\\text{Embedding}\n\\rightarrow\n\\text{Vector Search}\n\\rightarrow\n\\text{LLM}\n$$\n\nReal systems can become much more sophisticated.\n\nFor example:\n\n$$\n\\text{Query}\n\\rightarrow\n\\text{Query Expansion}\n\\rightarrow\n\\text{Retrieval}\n\\rightarrow\n\\text{Reranking}\n\\rightarrow\n\\text{Context Selection}\n\\rightarrow\n\\text{Generation}\n$$\n\nA reranker can examine retrieved candidates and determine which documents are actually most relevant.\n\nNow we have an optimization problem.\n\nWe want:\n\n$$\n\\max \\quad \\text{Answer Quality}\n$$\n\nwhile satisfying constraints such as:\n\n$$\n\\text{Latency} \\leq L\n$$\n\nand:\n\n$$\n\\text{Context Size} \\leq C\n$$\n\nSuddenly, RAG becomes much more than simply "connecting a vector database to an LLM."\n\n---\n\n## 13. A Simple Mental Model\n\nHere is an easy way to remember RAG.\n\nImagine a student taking an exam.\n\nA normal language model is like a student who has studied an enormous amount of material but cannot open any books during the exam.\n\nA RAG system is like a student who has access to a well-organized library.\n\nThe student still needs reasoning ability.\n\nBut now they can search for relevant information before answering.\n\nSo:\n\n$$\n\\boxed{\n\\text{RAG}\n=\n\\text{Retrieval}\n+\n\\text{Context}\n+\n\\text{Generation}\n}\n$$\n\nThe interesting part is that improving any one of these components can potentially improve the overall system.\n\n---\n\n## 14. What Can You Build With RAG?\n\nOnce you understand the basic pipeline, you can build surprisingly useful systems.\n\nFor example:\n\n* A chatbot for research papers\n* A question-answering system for university documents\n* A private company knowledge assistant\n* A codebase search assistant\n* A legal document search system\n* A personal knowledge base\n* A literature-review assistant\n\nFor researchers, one particularly interesting application is scientific literature search.\n\nImagine having thousands of papers indexed as embeddings and asking:\n\n> "Which papers discuss deterministic arithmetic in blockchain smart contracts?"\n\nThe system could retrieve relevant passages instead of forcing the researcher to manually search thousands of PDFs.\n\n---\n\n## 15. What Should You Learn Next?\n\nIf this is your first introduction to RAG, the next concepts worth exploring are:\n\n1. **Embedding models**\n2. **Approximate Nearest Neighbor search**\n3. **FAISS and vector indexing**\n4. **Hybrid retrieval**\n5. **Reranking models**\n6. **Chunking strategies**\n7. **Retrieval evaluation**\n8. **Hallucination detection**\n9. **Long-context models**\n10. **RAG for scientific research**\n\nOne particularly interesting research question is:\n\n> **Can we automatically determine whether the retrieved evidence is sufficient to support an AI-generated answer?**\n\nThat question connects information retrieval, NLP, machine learning, and AI reliability.\n\n---\n\n## Conclusion\n\nRAG is built from a few surprisingly simple ideas.\n\nFirst, break documents into useful pieces.\n\nSecond, represent those pieces as vectors.\n\nThird, retrieve the pieces that are relevant to a question.\n\nFinally, give those pieces to a language model so that it can generate an answer grounded in the retrieved information.\n\nThe entire idea can be summarized as:\n\n$$\n\\boxed{\n\\text{Documents}\n\\rightarrow\n\\text{Embeddings}\n\\rightarrow\n\\text{Retrieval}\n\\rightarrow\n\\text{Context}\n\\rightarrow\n\\text{Generation}\n}\n$$\n\nBut the deeper idea is even simpler:\n\n> **Don\'t force an AI to remember everything. Give it a way to find what it needs.**\n\nThat simple principle is one of the reasons RAG has become such an important design pattern in modern NLP and AI systems.\n\nAnd perhaps the most interesting question is what comes next:\n\n> **How do we make AI systems know not only what to retrieve, but also whether what they retrieved is actually enough to answer?**\n',
+    },
   ],
   orcid: "0009-0009-0276-9511",
   scholar: "https://scholar.google.com/citations?user=dLxWv64AAAAJ&hl",
@@ -145,4 +146,137 @@ const DEF = {
     },
   ],
   teaching: [],
+  assistant: {
+    enabled: true,
+    title: "Ask about my work",
+    prompt: "Ask about my research →",
+    endpoint: "",
+    description:
+      "Ask about my background, research, publications, or teaching.",
+  },
+  currently: {
+    enabled: false,
+    items: [],
+  },
+  github: {
+    enabled: true,
+    username: "smahmuddz",
+    showRecent: true,
+    repoCount: "",
+    activityNote: "",
+  },
+  projects: {
+    enabled: true,
+    items: [
+      {
+        title: "Litely",
+        description:
+          "A privacy-first toolkit for image conversion, PDF workflows, QR codes, and color palettes. Files are processed locally in the browser.",
+        technologies: "TypeScript, Web Workers, PWA",
+        repoUrl: "https://github.com/smahmuddz/Litely",
+        liveUrl: "https://litely-five.vercel.app/",
+      },
+      {
+        title: "HeeHee",
+        description:
+          "A mood-to-music app that reads free-text feelings and recommends a fitting track from the listener's own music library.",
+        technologies: "JavaScript, Web Audio, recommendation systems",
+        repoUrl: "https://github.com/smahmuddz/HeeHee",
+        liveUrl: "https://hee-hee-eight.vercel.app/",
+      },
+      {
+        title: "BanglaMix",
+        description:
+          "A research toolkit for collecting, cleaning, and rehydrating a Bengali-English code-mixed YouTube comments dataset, with data-access and reproducibility safeguards.",
+        technologies: "Python, NLP, dataset curation, YouTube API",
+        repoUrl: "https://github.com/smahmuddz/BanglaMix",
+        liveUrl: "",
+      },
+    ],
+  },
+  reading: {
+    enabled: true,
+    items: [
+      {
+        title: "Before the Coffee Gets Cold",
+        author: "Toshikazu Kawaguchi",
+        category: "Fiction",
+        personalRating: 4.5,
+        ratingLabel: "Personal rating",
+        note: "Four visitors to a Tokyo cafe are given the chance to revisit moments from their past.",
+        url: "https://www.penguinrandomhouse.com/books/609493/before-the-coffee-gets-cold-by-toshikazu-kawaguchi/",
+        cover: "https://covers.openlibrary.org/b/isbn/9781335430991-M.jpg",
+      },
+      {
+        title: "Ikigai: The Japanese Secret to a Long and Happy Life",
+        author: "Héctor García and Francesc Miralles",
+        category: "Personal growth",
+        personalRating: 4,
+        ratingLabel: "Personal rating",
+        note: "A popular introduction to purpose, routine, and well-being through the idea of ikigai.",
+        url: "https://openlibrary.org/isbn/9780143130727",
+        cover: "https://covers.openlibrary.org/b/isbn/9780143130727-M.jpg",
+      },
+      {
+        title: "It Ends with Us",
+        author: "Colleen Hoover",
+        category: "Contemporary fiction",
+        personalRating: 4,
+        ratingLabel: "Personal rating",
+        note: "A story about love, difficult choices, and breaking cycles.",
+        url: "https://www.simonandschuster.com/books/It-Ends-with-Us/Colleen-Hoover/9781501110368",
+        cover: "https://covers.openlibrary.org/b/isbn/9781501110368-M.jpg",
+      },
+      {
+        title: "Verity",
+        author: "Colleen Hoover",
+        category: "Psychological suspense",
+        personalRating: 4.5,
+        ratingLabel: "Personal rating",
+        note: "A suspenseful novel about an author, an unfinished manuscript, and a family's secrets.",
+        url: "https://www.grandcentralpublishing.com/titles/colleen-hoover/verity/9781538724736/",
+        cover: "https://covers.openlibrary.org/b/isbn/9781538724736-M.jpg",
+      },
+    ],
+  },
+  experiments: {
+    enabled: false,
+    items: [],
+  },
+  demos: {
+    enabled: true,
+    items: [
+      {
+        enabled: true,
+        kind: "tokenization",
+        title: "Tokenization",
+        description:
+          "Split a sentence into word tokens; punctuation is ignored.",
+        sampleText: "I love NLP",
+      },
+      {
+        enabled: true,
+        kind: "cosine-similarity",
+        title: "Cosine similarity",
+        description:
+          "Compare bag-of-words vectors. This lexical baseline finds shared terms, not semantic meaning.",
+        textA: "language model",
+        textB: "AI model",
+      },
+      {
+        enabled: true,
+        kind: "attention",
+        title: "Attention weights",
+        description:
+          "An editable toy matrix showing how token-to-token weights can be represented. Values are illustrative, not produced by a trained model.",
+        words: ["I", "love", "NLP", "research"],
+        weights: [
+          [0.4, 0.3, 0.2, 0.1],
+          [0.1, 0.55, 0.25, 0.1],
+          [0.05, 0.2, 0.6, 0.15],
+          [0.1, 0.2, 0.25, 0.45],
+        ],
+      },
+    ],
+  },
 };

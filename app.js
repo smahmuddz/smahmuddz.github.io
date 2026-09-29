@@ -4,6 +4,78 @@ try {
 } catch (x) {
   D = JSON.parse(JSON.stringify(DEF));
 }
+const ensureOptionalSections = () => {
+  D.assistant = Object.assign(
+    {
+      enabled: false,
+      title: "Ask about my work",
+      prompt: "Ask about my research →",
+      endpoint: "",
+      description:
+        "No backend is configured yet. Add an API endpoint to enable this feature.",
+    },
+    D.assistant || {},
+  );
+  D.currently = Object.assign({ enabled: false, items: [] }, D.currently || {});
+  D.currently.items = Array.isArray(D.currently.items) ? D.currently.items : [];
+  D.github = Object.assign(
+    {
+      enabled: false,
+      username: "",
+      showRecent: true,
+      repoCount: "",
+      activityNote: "",
+    },
+    D.github || {},
+  );
+  D.projects = Object.assign({ enabled: false, items: [] }, D.projects || {});
+  D.projects.items = Array.isArray(D.projects.items) ? D.projects.items : [];
+  D.reading = Object.assign({ enabled: false, items: [] }, D.reading || {});
+  D.reading.items = Array.isArray(D.reading.items) ? D.reading.items : [];
+  D.experiments = Object.assign(
+    { enabled: false, items: [] },
+    D.experiments || {},
+  );
+  D.experiments.items = Array.isArray(D.experiments.items)
+    ? D.experiments.items
+    : [];
+  D.demos = Object.assign({ enabled: false, items: [] }, D.demos || {});
+  D.demos.items = Array.isArray(D.demos.items) ? D.demos.items : [];
+};
+ensureOptionalSections();
+const OPTIONAL_DEFAULTS_MIGRATION = "sma_optional_defaults_v7";
+try {
+  if (localStorage.getItem(OPTIONAL_DEFAULTS_MIGRATION) !== "1") {
+    const storedData = JSON.parse(localStorage.getItem(KEY) || "{}");
+    const savedData =
+      storedData && typeof storedData === "object" ? storedData : {};
+    if (!D.github.username) {
+      D.github.username = DEF.github.username;
+      D.github.enabled = true;
+    }
+    const previousBookSeeds = new Set([
+      "1984",
+      "Brave New World",
+      "The Stranger",
+      "Siddhartha",
+    ]);
+    if (
+      !D.reading.items.length ||
+      D.reading.items.some((item) => previousBookSeeds.has(item.title))
+    ) {
+      D.reading.items = JSON.parse(JSON.stringify(DEF.reading.items));
+      D.reading.enabled = true;
+    }
+    if (!D.demos.items.length) {
+      D.demos.items = JSON.parse(JSON.stringify(DEF.demos.items));
+    }
+    D.demos.enabled = true;
+    savedData.demos = D.demos;
+    localStorage.setItem(KEY, JSON.stringify(savedData));
+    D.assistant.enabled = true;
+    localStorage.setItem(OPTIONAL_DEFAULTS_MIGRATION, "1");
+  }
+} catch (x) {}
 const DELETED_POSTS_KEY = KEY + "_deleted_posts";
 const deletedPosts = () => {
   try {
@@ -111,9 +183,705 @@ const affs = () => {
     .map((x) => `<div class="af">${lg(x)}<span>${e(x.place)}</span></div>`)
     .join("");
 };
-const rows = (a, f) => a.map(f).join("");
-const pubHtml = (p) =>
-  `<div class="pub"><div class="ab"><span>${e(p.abbr)}</span></div><div><div class="tt">${e(p.title)}</div><div class="au">${e(p.authors).replace(e(D.name), "<u>" + e(D.name) + "</u>")}</div><div class="au"><em>${e(p.venue)}</em>${p.year ? ", " + e(p.year) : ""}</div>${p.doi ? `<a class="bt" href="${e(p.doi)}" target="_blank" rel="noopener">DOI</a>` : ""}${p.pdf && !p.pdf.startsWith("data:") ? `<a class="bt" href="${e(p.pdf)}" target="_blank" rel="noopener">PDF</a>` : ""}</div></div>`;
+const rows = (a, f) => (Array.isArray(a) ? a.map(f).join("") : "");
+const slugify = (s) =>
+  String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "item";
+const getPubSlug = (p) => slugify(p.slug || p.title || "publication");
+const makeBibtex = (p) => {
+  if (p.bibtex && p.bibtex.trim()) return p.bibtex.trim();
+  const key = slugify(p.title || p.abbr || "publication");
+  const year = (p.year || "n.d.").replace(/[^0-9A-Za-z]/g, "");
+  const authors = (p.authors || "")
+    .split(/,\s*|\s+and\s+/)
+    .filter(Boolean)
+    .map((a) => a.trim())
+    .join(" and ");
+  return `@article{${key}${year},\n  title = {${(p.title || "").replace(/[{}]/g, "").trim()}},\n  author = {${authors}},\n  journal = {${(p.venue || "").replace(/[{}]/g, "").trim()}},\n  year = {${p.year || "n.d."}}\n}`;
+};
+const renderPublicationActions = (pub) => {
+  const items = [
+    [pub.pdf, "PDF"],
+    [pub.doi, "DOI"],
+    [pub.code, "Code"],
+    [pub.dataset, "Dataset"],
+  ].filter(([url]) => !!url && String(url).trim());
+  const citeBtn = `<button class="action-btn" type="button" data-cite="${e(makeBibtex(pub))}">Cite</button>`;
+  const links = items
+    .map(
+      ([url, label]) =>
+        `<a href="${e(url)}" target="_blank" rel="noopener">${e(label)}</a>`,
+    )
+    .join("");
+  return `<div class="pub-actions">${links}${citeBtn}</div>`;
+};
+const normalizeChartData = (value) => {
+  if (!value) return null;
+  let chart = value;
+  if (typeof chart === "string") {
+    try {
+      chart = JSON.parse(chart);
+    } catch (x) {
+      return null;
+    }
+  }
+  if (!chart || typeof chart !== "object") return null;
+  const labels = Array.isArray(chart.labels) ? chart.labels : [];
+  const values = Array.isArray(chart.values) ? chart.values : [];
+  if (!labels.length && !values.length) return null;
+  return {
+    type: chart.type || "bar",
+    title: chart.title || "Results",
+    labels: labels.length ? labels : values.map((_, i) => `Item ${i + 1}`),
+    values: values.length ? values.map((v) => Number(v) || 0) : [0],
+    series:
+      Array.isArray(chart.series) && chart.series.length
+        ? chart.series
+        : ["Value"],
+  };
+};
+const renderChartHtml = (spec) => {
+  const chart = normalizeChartData(spec);
+  if (!chart) return "";
+  return `<div class="chart-panel"><div class="sub">${e(chart.title)}</div><canvas class="chart-canvas" data-chart='${e(JSON.stringify(chart))}' width="640" height="240"></canvas></div>`;
+};
+const drawChartToCanvas = (canvas, rawChart) => {
+  if (!canvas || !rawChart) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const style = getComputedStyle(document.documentElement);
+  const fg = style.getPropertyValue("--fg").trim() || "#111";
+  const acc = style.getPropertyValue("--acc").trim() || "#b509ac";
+  const line = style.getPropertyValue("--line").trim() || "#e5e5e5";
+  const chart = normalizeChartData(rawChart);
+  if (!chart) return;
+  const values = chart.values.map((n) => Number(n) || 0);
+  const max = Math.max(...values, 1);
+  const pad = { t: 20, r: 18, b: 36, l: 36 };
+  const w = canvas.width || 640;
+  const h = canvas.height || 240;
+  const innerW = w - pad.l - pad.r;
+  const innerH = h - pad.t - pad.b;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.t + (innerH / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(w - pad.r, y);
+    ctx.stroke();
+  }
+  if (chart.type === "line") {
+    ctx.beginPath();
+    values.forEach((value, index) => {
+      const x = pad.l + (index / Math.max(values.length - 1, 1)) * innerW;
+      const y = pad.t + innerH - (value / max) * innerH;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = acc;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    values.forEach((value, index) => {
+      const x = pad.l + (index / Math.max(values.length - 1, 1)) * innerW;
+      const y = pad.t + innerH - (value / max) * innerH;
+      ctx.beginPath();
+      ctx.fillStyle = acc;
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  } else {
+    const barW = (innerW / Math.max(values.length, 1)) * 0.72;
+    values.forEach((value, index) => {
+      const x = pad.l + (innerW / Math.max(values.length, 1)) * index + 8;
+      const hVal = (value / max) * innerH;
+      const y = pad.t + innerH - hVal;
+      ctx.fillStyle = acc;
+      ctx.fillRect(x, y, barW, hVal);
+    });
+  }
+  ctx.fillStyle = fg;
+  ctx.font = "11px sans-serif";
+  chart.labels.forEach((label, index) => {
+    const x =
+      pad.l +
+      (innerW / Math.max(chart.labels.length, 1)) * index +
+      innerW / Math.max(chart.labels.length, 1) / 2;
+    ctx.fillText(String(label).slice(0, 10), x - 14, h - 12);
+  });
+};
+const openBibtexModal = (bibtex) => {
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.innerHTML = `
+    <div class="modal-box">
+      <div class="cite-actions">
+        <h3 style="margin:0">BibTeX</h3>
+        <button class="b g" type="button" data-close-bib>Close</button>
+      </div>
+      <textarea readonly>${e(bibtex || "")}</textarea>
+      <div class="cite-actions" style="margin-top:12px">
+        <button class="b" type="button" data-copy-bib>Copy BibTeX</button>
+        <span class="copy-status" data-copy-status>Ready to copy</span>
+      </div>
+    </div>
+  `;
+  const status = modal.querySelector("[data-copy-status]");
+  modal.querySelector("[data-close-bib]").onclick = () => modal.remove();
+  modal.querySelector("[data-copy-bib]").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(bibtex || "");
+      status.textContent = "Copied!";
+    } catch (x) {
+      status.textContent = "Copy failed — select the text manually.";
+    }
+  };
+  modal.onclick = (event) => {
+    if (event.target === modal) modal.remove();
+  };
+  document.body.appendChild(modal);
+};
+const bindFeatureInteractions = () => {
+  document.querySelectorAll("[data-open-assistant]").forEach((button) => {
+    button.onclick = openAssistant;
+  });
+  document.querySelectorAll("[data-cite]").forEach((button) => {
+    button.onclick = () => openBibtexModal(button.dataset.cite || "");
+  });
+  document.querySelectorAll("canvas[data-chart]").forEach((canvas) => {
+    const chart = JSON.parse(canvas.dataset.chart || "null");
+    drawChartToCanvas(canvas, chart);
+  });
+  document.querySelectorAll("[data-tokenize]").forEach((button) => {
+    button.onclick = () => {
+      const box = button.closest(".demo-box");
+      const field = box?.querySelector("[data-demo-token-input]");
+      const output = box?.querySelector("[data-demo-token-output]");
+      if (!field || !output) return;
+      const tokens = field.value.match(/[\p{L}\p{N}]+/gu) || [];
+      output.innerHTML = tokens
+        .map((token) => `<span class="token">[${e(token)}]</span>`)
+        .join(" ");
+    };
+  });
+  document.querySelectorAll("[data-similarity]").forEach((button) => {
+    button.onclick = () => {
+      const box = button.closest(".demo-box");
+      const aField = box?.querySelector("[data-demo-sim-a]");
+      const bField = box?.querySelector("[data-demo-sim-b]");
+      const output = box?.querySelector("[data-demo-sim-output]");
+      if (!aField || !bField || !output) return;
+      const tokenize = (value) =>
+        value.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+      const countTerms = (tokens) =>
+        tokens.reduce((counts, token) => {
+          counts.set(token, (counts.get(token) || 0) + 1);
+          return counts;
+        }, new Map());
+      const left = countTerms(tokenize(aField.value));
+      const right = countTerms(tokenize(bField.value));
+      let dot = 0;
+      let leftMagnitude = 0;
+      let rightMagnitude = 0;
+      for (const term of new Set([...left.keys(), ...right.keys()])) {
+        const leftCount = left.get(term) || 0;
+        const rightCount = right.get(term) || 0;
+        dot += leftCount * rightCount;
+        leftMagnitude += leftCount ** 2;
+        rightMagnitude += rightCount ** 2;
+      }
+      const denominator = Math.sqrt(leftMagnitude * rightMagnitude);
+      if (!denominator) {
+        output.textContent = "Enter at least one word in both texts.";
+        return;
+      }
+      const score = (dot / denominator) * 100;
+      output.textContent = `Cosine similarity: ${score.toFixed(1)}% (word overlap, not semantic similarity)`;
+    };
+  });
+};
+const syncOptionalNav = () => {
+  const nav = document.getElementById("nl");
+  if (!nav) return;
+  const links = [
+    { label: "about", href: "#about" },
+    { label: "publications", href: "#publications" },
+    { label: "blog", href: "#blog" },
+    { label: "cv", href: "#cv" },
+    { label: "teaching", href: "#teaching" },
+    ...(D.reading && D.reading.enabled
+      ? [{ label: "reading", href: "#reading" }]
+      : []),
+    ...(D.projects && D.projects.enabled && D.projects.items.length
+      ? [{ label: "projects", href: "#projects" }]
+      : []),
+    ...(D.experiments && D.experiments.enabled
+      ? [{ label: "experiments", href: "#experiments" }]
+      : []),
+    ...(D.demos && D.demos.enabled
+      ? [{ label: "playground", href: "#playground" }]
+      : []),
+  ];
+  nav.innerHTML = links
+    .map((link) => `<a class="l" href="${e(link.href)}">${e(link.label)}</a>`)
+    .join("");
+};
+const renderCurrentlySection = () => {
+  const items = ((D.currently && D.currently.items) || []).filter(
+    (item) => item && (item.label || item.value),
+  );
+  if (!D.currently || !D.currently.enabled || !items.length) return "";
+  return `<div class="currently-panel"><h2>${SV(IC.star)} Currently</h2><div class="currently-grid">${items
+    .map(
+      (item) =>
+        `<div class="currently-item"><span class="label">${e(item.label || "Current")}</span><div>${e(item.value || "")}</div></div>`,
+    )
+    .join("")}</div></div>`;
+};
+const renderAssistantSection = () => {
+  if (!D.assistant || !D.assistant.enabled) return "";
+  return `<div class="feature-card"><div class="feature-copy"><strong>${e(D.assistant.title || "Ask about my work")}</strong><span>${e(D.assistant.description || "Ask about my background, research, publications, or teaching.")}</span></div><button class="feature-link" type="button" data-open-assistant>${e(D.assistant.prompt || "Ask about my research →")}</button></div>`;
+};
+const GITHUB_MARK = `<svg class="github-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.23 1.84 1.23 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.28-1.23 3.28-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.47 5.92.43.38.81 1.1.81 2.22v3.29c0 .32.22.69.83.57A12 12 0 0 0 12 .3Z"/></svg>`;
+const DEMOS_REPO_URL = "https://github.com/smahmuddz/smahmuddz.github.io";
+const renderDemoMark = (kind) => {
+  const name = String(kind || "").toLowerCase();
+  const icon = name.includes("token")
+    ? '<path d="M4 6h3m3 0h3m3 0h4M4 12h4m3 0h3m3 0h3M4 18h2m4 0h3m3 0h4"/><path d="M8 4v4m4 2v4m4 2v4"/>'
+    : name.includes("attention") || name.includes("visual")
+      ? '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/><path d="M10 7h4M7 10v4m10-4v4m-7 3h4"/>'
+      : '<path d="M4 20V5m0 15h17M6 17l5-6 4 3 5-8"/><path d="M16 6h4v4"/>';
+  return `<span class="demo-logo" aria-hidden="true">${SV(icon)}</span>`;
+};
+const renderGitHubSection = () => {
+  if (!D.github || !D.github.enabled || !D.github.username) return "";
+  const username = String(D.github.username).replace(/^@/, "");
+  const repoBadge = D.github.repoCount
+    ? `<div class="meta">${e(D.github.repoCount)} public repos</div>`
+    : "";
+  const activity = D.github.activityNote
+    ? `<div class="sub" style="margin:0">${e(D.github.activityNote)}</div>`
+    : `<div class="sub" style="margin:0">Public work and recent activity.</div>`;
+  return `<div class="github-panel"><div class="github-logo" aria-hidden="true">${GITHUB_MARK}</div><div><strong>@${e(username)}</strong>${repoBadge}${activity}<a href="https://github.com/${encodeURIComponent(username)}" target="_blank" rel="noopener">${GITHUB_MARK}<span>Open GitHub profile</span></a></div></div>`;
+};
+const renderProjectCards = (items) =>
+  `<div class="project-grid">${items
+    .map(
+      (project) =>
+        `<article class="project-card"><h3>${e(project.title || "Project")}</h3><p>${e(project.description || "")}</p>${
+          project.technologies
+            ? `<div class="project-tech">${project.technologies
+                .split(/,\s*/)
+                .map(
+                  (technology) => `<span class="tag">${e(technology)}</span>`,
+                )
+                .join("")}</div>`
+            : ""
+        }<div class="project-actions">${project.repoUrl ? `<a class="action-btn" href="${e(project.repoUrl)}" target="_blank" rel="noopener">${GITHUB_MARK}<span>GitHub repository</span></a>` : ""}${project.liveUrl ? `<a class="action-btn" href="${e(project.liveUrl)}" target="_blank" rel="noopener">Live project</a>` : ""}</div></article>`,
+    )
+    .join("")}</div>`;
+const renderProjectsSection = (fullPage = false) => {
+  const items = ((D.projects && D.projects.items) || []).filter(
+    (project) => project && (project.title || project.description),
+  );
+  if (!D.projects || !D.projects.enabled || !items.length) {
+    return fullPage
+      ? `<h1 class="t">projects</h1><div class="sub">No projects are currently listed.</div>`
+      : "";
+  }
+  return fullPage
+    ? `<h1 class="t">projects</h1><div class="sub">Selected software and research projects.</div>${renderProjectCards(items)}`
+    : `${H("code", "selected projects")}${renderProjectCards(items)}<p class="project-more"><a href="#projects">All projects →</a></p>`;
+};
+const renderBookCards = (items) =>
+  items
+    .map(
+      (item) =>
+        `<article class="reading-item book-item"><div class="book-cover-wrap">${item.cover ? `<img class="book-cover" src="${e(item.cover)}" alt="Cover of ${e(item.title || "book")}" loading="lazy" onerror="this.hidden=true">` : `<div class="book-cover-placeholder">${e(item.title || "Book")}</div>`}</div><div class="book-info"><div class="meta">${e(item.category || "Reading")}${item.date ? ` · ${e(item.date)}` : ""}</div><strong>${e(item.title || "Untitled")}</strong>${item.author ? `<div class="book-author">${e(item.author)}</div>` : ""}${item.personalRating != null ? `<div class="book-rating" aria-label="${e(item.ratingLabel || "Rating")}: ${e(item.personalRating)} out of 5"><span>${e(item.personalRating)} / 5</span><span class="meta">${e(item.ratingLabel || "Personal rating")}</span></div>` : ""}${item.note ? `<div class="book-note">${e(item.note)}</div>` : ""}${item.status ? `<div class="meta">${e(item.status)}</div>` : ""}${item.url ? `<a href="${e(item.url)}" target="_blank" rel="noopener">Book details</a>` : ""}</div></article>`,
+    )
+    .join("");
+const renderReadingList = () => {
+  const items = ((D.reading && D.reading.items) || []).filter(
+    (item) => item && (item.title || item.author || item.note),
+  );
+  if (!D.reading || !D.reading.enabled || !items.length) return "";
+  return `<div class="reading-panel"><h2>${SV(IC.book)} Reading list</h2><div class="reading-grid">${renderBookCards(items)}</div></div>`;
+};
+const renderExperimentsSection = () => {
+  const items = ((D.experiments && D.experiments.items) || []).filter(
+    (item) => item && (item.title || item.question || item.description),
+  );
+  if (!D.experiments || !D.experiments.enabled || !items.length) return "";
+  return `<div class="experiment-panel"><h2>${SV(IC.code)} Experiments</h2><div class="experiment-grid">${items
+    .map(
+      (item) =>
+        `<div class="experiment-item"><span class="meta">${e(item.dataset || "Experiment")}</span><strong>${e(item.title || "Untitled experiment")}</strong>${item.question ? `<div>${e(item.question)}</div>` : ""}</div>`,
+    )
+    .join("")}</div></div>`;
+};
+const renderDemoCards = () => {
+  const items = ((D.demos && D.demos.items) || []).filter(
+    (demo) =>
+      demo && demo.enabled !== false && (demo.title || demo.description),
+  );
+  if (!D.demos || !D.demos.enabled || !items.length) return "";
+  return `<div class="demo-panel"><div class="demo-panel-heading"><h2>${SV(IC.code)} Interactive demos</h2><a class="demo-source" href="${DEMOS_REPO_URL}" target="_blank" rel="noopener">${GITHUB_MARK}<span>Source</span></a></div><div class="experimental-demo">${items
+    .map(
+      (demo) =>
+        `<div class="demo-box"><div class="demo-card-title">${renderDemoMark(demo.kind || demo.title)}<strong>${e(demo.title || "Demo")}</strong></div><div class="sub" style="margin:0">${e(demo.description || "Educational demo")}</div><div class="demo-cta"><a href="#playground" class="bt">Open</a></div></div>`,
+    )
+    .join("")}</div></div>`;
+};
+const renderPubCard = (p) => {
+  const slug = getPubSlug(p);
+  return `<div class="pub"><div class="ab"><span>${e(p.abbr || "P")}</span></div><div><div class="tt">${e(p.title)}</div><div class="au">${e(p.authors).replace(e(D.name), "<u>" + e(D.name) + "</u>")}</div><div class="au"><em>${e(p.venue)}</em>${p.year ? ", " + e(p.year) : ""}</div>${renderPublicationActions(p)}<div style="margin-top:8px"><a href="#publications/${e(slug)}">Open details →</a></div></div></div>`;
+};
+const publicationPage = (pub) => {
+  const fields = [
+    ["Authors", pub.authors],
+    ["Publication venue", pub.venue],
+    ["Year", pub.year],
+    ["Abstract", pub.abstract],
+    ["Keywords", pub.keywords],
+    ["Key findings", pub.findings],
+    ["Methodology", pub.methodology],
+    ["Results", pub.results],
+    ["Code", pub.code],
+    ["Dataset", pub.dataset],
+    ["DOI", pub.doi],
+    ["Citation", pub.citation],
+  ].filter(([, value]) => !!String(value || "").trim());
+  const tags = (pub.keywords || pub.topics || "")
+    .split(/,|\n/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((t) => `<span class="tag">${e(t)}</span>`)
+    .join("");
+  const results = renderChartHtml(
+    pub.resultsData || pub.chart || pub.results || null,
+  );
+  return `<div class="pub-detail"><a href="#publications">← publications</a><h1 class="t" style="margin-top:14px">${e(pub.title || "Untitled publication")}</h1><div class="meta">${e(pub.venue || "")}${pub.year ? ` · ${e(pub.year)}` : ""}</div>${renderPublicationActions(pub)}${tags ? `<div class="facts">${tags}</div>` : ""}${fields.map(([label, value]) => `<div class="section"><h3>${e(label)}</h3><div>${md(String(value))}</div></div>`).join("")}${results ? `<div class="section"><h3>Results</h3>${results}</div>` : ""}</div>`;
+};
+const renderPublicationList = () => {
+  if (!Array.isArray(D.pubs) || !D.pubs.length) {
+    return `<h1 class="t">publications</h1><div class="sub">No publications have been added yet.</div>`;
+  }
+  return `<h1 class="t">publications</h1><div class="sub">Peer-reviewed papers, listed by year.</div>${rows(D.pubs, renderPubCard)}${D.scholar ? `<p style="margin-top:20px"><a href="${e(D.scholar)}" target="_blank" rel="noopener">See Google Scholar profile →</a></p>` : ""}`;
+};
+const renderDemoPlayground = () => {
+  const items = ((D.demos && D.demos.items) || []).filter(
+    (demo) =>
+      demo && demo.enabled !== false && (demo.title || demo.description),
+  );
+  if (!D.demos || !D.demos.enabled || !items.length) {
+    return `<h1 class="t">research playground</h1><div class="sub">No interactive demos are configured yet.</div>`;
+  }
+  return `<div class="playground-heading"><div><h1 class="t">research playground</h1><div class="sub">Lightweight educational demos for NLP and related ideas.</div></div><a class="demo-source" href="${DEMOS_REPO_URL}" target="_blank" rel="noopener">${GITHUB_MARK}<span>GitHub source</span></a></div><div class="experimental-demo">${items
+    .map((demo) => {
+      const title = e(demo.title || "Demo");
+      const kind = String(demo.kind || demo.title || "")
+        .toLowerCase()
+        .replace(/[_\s]+/g, "-");
+      const description = demo.description
+        ? `<p class="demo-description">${e(demo.description)}</p>`
+        : "";
+      if (kind.includes("token")) {
+        return `<div class="demo-box"><div class="demo-card-title">${renderDemoMark(kind)}<h3>${title}</h3></div>${description}<textarea data-demo-token-input rows="2">${e(demo.sampleText || "I love NLP")}</textarea><button class="b" type="button" data-tokenize>Tokenize</button><div class="token-box" data-demo-token-output aria-live="polite"></div></div>`;
+      }
+      if (kind.includes("attention") || kind.includes("visual")) {
+        const words = (
+          Array.isArray(demo.words) && demo.words.length
+            ? demo.words
+            : ["I", "love", "NLP", "research"]
+        )
+          .slice(0, 5)
+          .map(String);
+        const weights = words.map((word, row) =>
+          words.map((key, column) => {
+            const value = Number(demo.weights?.[row]?.[column] ?? 0);
+            return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+          }),
+        );
+        const matrix = `<div class="attention-matrix" style="grid-template-columns:minmax(46px,.9fr) repeat(${words.length},minmax(0,1fr))"><span class="attention-axis">Query / key</span>${words.map((word) => `<span class="attention-axis">${e(word)}</span>`).join("")}${words.map((word, row) => `<span class="attention-axis">${e(word)}</span>${weights[row].map((weight, column) => `<span class="attention-cell" aria-label="${e(word)} to ${e(words[column])}: ${weight.toFixed(2)}" title="${e(word)} to ${e(words[column])}" style="--weight-color:color-mix(in srgb,var(--acc) ${Math.round(weight * 100)}%,var(--card))">${weight.toFixed(2)}</span>`).join("")}`).join("")}</div>`;
+        return `<div class="demo-box"><div class="demo-card-title">${renderDemoMark(kind)}<h3>${title}</h3></div>${description}<div class="attention-wrap">${matrix}<div class="sub">Rows are queries; columns are the tokens receiving attention.</div></div></div>`;
+      }
+      if (kind.includes("similarity") || kind.includes("cosine")) {
+        return `<div class="demo-box"><div class="demo-card-title">${renderDemoMark(kind)}<h3>${title}</h3></div>${description}<label class="demo-field-label">Text A<input data-demo-sim-a value="${e(demo.textA || "language model")}"></label><label class="demo-field-label">Text B<input data-demo-sim-b value="${e(demo.textB || "AI model")}"></label><button class="b" type="button" data-similarity>Compare</button><div class="similarity-score" data-demo-sim-output aria-live="polite"></div>`;
+      }
+      return `<div class="demo-box"><div class="demo-card-title">${renderDemoMark(kind)}<h3>${title}</h3></div>${description}<p class="sub">This demo type is not interactive yet.</p></div>`;
+    })
+    .join("")}</div>`;
+};
+const renderReadingPage = () => {
+  const items = ((D.reading && D.reading.items) || []).filter(
+    (item) => item && (item.title || item.author || item.note),
+  );
+  if (!D.reading || !D.reading.enabled || !items.length) {
+    return `<h1 class="t">reading</h1><div class="sub">No reading list entries are currently visible.</div>`;
+  }
+  return `<h1 class="t">reading</h1><div class="sub">Source material and recent reads.</div><div class="reading-grid reading-page-grid">${renderBookCards(items)}</div>`;
+};
+const assistantDocuments = () =>
+  [
+    { title: "Profile", content: `${D.name}. ${D.tagline}. ${D.bio}` },
+    { title: "Research interests", content: D.interests || "" },
+    {
+      title: "Projects",
+      content: ((D.projects && D.projects.items) || [])
+        .map(
+          (project) =>
+            `${project.title}. ${project.description}. ${project.technologies || ""}`,
+        )
+        .join(". "),
+    },
+    {
+      title: "Education",
+      content: (D.education || [])
+        .map((x) => `${x.title}, ${x.place}, ${x.period}`)
+        .join(". "),
+    },
+    {
+      title: "Experience",
+      content: (D.experience || [])
+        .map((x) => `${x.title}, ${x.place}, ${x.period}. ${x.desc || ""}`)
+        .join(". "),
+    },
+    {
+      title: "Publications",
+      content: (D.pubs || [])
+        .map(
+          (x) =>
+            `${x.title}. ${x.authors}. ${x.venue}, ${x.year}. ${x.abstract || ""}`,
+        )
+        .join(". "),
+    },
+    {
+      title: "Teaching and training",
+      content: [...(D.teaching || []), ...(D.training || [])]
+        .map((x) => `${x.course || x.title}, ${x.place}, ${x.period}`)
+        .join(". "),
+    },
+    {
+      title: "Skills",
+      content: (D.skills || []).map((x) => `${x.cat}: ${x.items}`).join(". "),
+    },
+    {
+      title: "Writing",
+      content: (D.posts || [])
+        .filter((x) => x.status !== "draft")
+        .map(
+          (x) =>
+            `${x.title}. ${x.tags || ""}. ${String(x.body || "").slice(0, 1200)}`,
+        )
+        .join(". "),
+    },
+    {
+      title: "Contact",
+      content: `Email: ${D.email || "not listed"}. GitHub: @${D.github.username || ""}.`,
+    },
+  ].filter((document) => document.content.trim());
+const answerAssistantLocally = (question) => {
+  const stopWords = new Set([
+    "about",
+    "are",
+    "can",
+    "could",
+    "does",
+    "for",
+    "from",
+    "give",
+    "have",
+    "how",
+    "into",
+    "is",
+    "me",
+    "my",
+    "please",
+    "tell",
+    "that",
+    "the",
+    "their",
+    "them",
+    "this",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+    "you",
+  ]);
+  const terms = (question.toLowerCase().match(/[a-z0-9]+/g) || []).filter(
+    (term) => term.length > 2 && !stopWords.has(term),
+  );
+  const documents = assistantDocuments();
+  if (!terms.length || /\b(who|background|about|bio)\b/i.test(question)) {
+    return `${documents[0].content}\n\nSource: ${documents[0].title}`;
+  }
+  const ranked = documents
+    .map((document) => {
+      const title = document.title.toLowerCase();
+      const text = `${title} ${document.content}`.toLowerCase();
+      const score = terms.reduce((total, term) => {
+        const root = term.replace(/s$/, "");
+        const matches =
+          text.match(new RegExp(`\\b${root}[a-z]*\\b`, "g")) || [];
+        return (
+          total + Math.min(matches.length, 4) + (title.includes(root) ? 10 : 0)
+        );
+      }, 0);
+      return { ...document, score };
+    })
+    .filter((document) => document.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const bestScore = ranked[0]?.score || 0;
+  const relevant = ranked
+    .filter((document) => document.score >= Math.max(2, bestScore * 0.45))
+    .slice(0, 2);
+  if (!relevant.length) {
+    return "I couldn't find that in the public information on this site. Try asking about the profile, research interests, publications, education, experience, teaching, skills, or writing.";
+  }
+  return `${relevant
+    .map(
+      (document) =>
+        `${document.title}: ${document.content
+          .replace(/[#>*_]/g, "")
+          .replace(/\s+/g, " ")
+          .slice(0, 500)}`,
+    )
+    .join(
+      "\n\n",
+    )}\n\nSources: ${relevant.map((document) => document.title).join(", ")}`;
+};
+const openAssistant = () => {
+  const modal = document.createElement("div");
+  modal.className = "modal assistant-modal";
+  modal.innerHTML = `<section class="modal-box assistant-box" role="dialog" aria-modal="true" aria-labelledby="assistant-title"><div class="cite-actions"><h3 id="assistant-title">${e(D.assistant.title || "Ask about my work")}</h3><button class="b g" type="button" data-assistant-close>Close</button></div><p class="assistant-intro">Answers are grounded in the public information on this site.</p><div class="assistant-messages" data-assistant-messages aria-live="polite"><div class="assistant-message assistant-reply">Ask about my background, research, publications, education, teaching, or writing.</div></div><form class="assistant-form" data-assistant-form><input name="question" autocomplete="off" placeholder="Ask a question about my work" aria-label="Your question" required><button class="b" type="submit">Ask</button></form></section>`;
+  document.body.appendChild(modal);
+  const input = modal.querySelector('[name="question"]');
+  const messages = modal.querySelector("[data-assistant-messages]");
+  const form = modal.querySelector("[data-assistant-form]");
+  const onKeydown = (event) => {
+    if (event.key === "Escape") close();
+  };
+  const close = () => {
+    modal.removeEventListener("keydown", onKeydown);
+    modal.remove();
+  };
+  modal.querySelector("[data-assistant-close]").onclick = close;
+  modal.onclick = (event) => {
+    if (event.target === modal) close();
+  };
+  modal.addEventListener("keydown", onKeydown);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const question = input.value.trim();
+    if (!question) return;
+    const userMessage = document.createElement("div");
+    userMessage.className = "assistant-message assistant-question";
+    userMessage.textContent = question;
+    messages.appendChild(userMessage);
+    input.value = "";
+    input.disabled = true;
+    const submit = form.querySelector("button");
+    submit.disabled = true;
+    const reply = document.createElement("div");
+    reply.className = "assistant-message assistant-reply";
+    reply.textContent = "Looking through the site content...";
+    messages.appendChild(reply);
+    messages.scrollTop = messages.scrollHeight;
+    try {
+      let answer;
+      const endpoint = String(D.assistant.endpoint || "").trim();
+      if (endpoint) {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, context: assistantDocuments() }),
+        });
+        if (!response.ok)
+          throw new Error(`Assistant endpoint returned ${response.status}`);
+        const result = await response.json();
+        answer =
+          result.answer ||
+          result.output ||
+          result.choices?.[0]?.message?.content;
+        if (!answer) throw new Error("Assistant endpoint returned no answer");
+      }
+      reply.textContent = answer || answerAssistantLocally(question);
+    } catch (error) {
+      reply.textContent = `The live assistant is unavailable, so here is an answer from the site content instead:\n\n${answerAssistantLocally(question)}`;
+    } finally {
+      input.disabled = false;
+      submit.disabled = false;
+      input.focus();
+      messages.scrollTop = messages.scrollHeight;
+    }
+  };
+  input.focus();
+};
+const renderExperimentList = () => {
+  const items = ((D.experiments && D.experiments.items) || []).filter(
+    (item) => item && (item.title || item.question || item.description),
+  );
+  if (!D.experiments || !D.experiments.enabled || !items.length) {
+    return `<h1 class="t">experiments</h1><div class="sub">No experiments are currently published.</div>`;
+  }
+  return `<h1 class="t">experiments</h1><div class="sub">Research experiments and comparative analyses.</div>${items.map((item) => `<div class="card"><div class="sub" style="margin:0">${e(item.dataset || "Experiment")}</div><a href="#experiments/${e(slugify(item.title || item.question || "experiment"))}" style="font-size:1.15rem;font-weight:500">${e(item.title || "Untitled experiment")}</a>${item.question ? `<div style="color:var(--mut)">${e(item.question)}</div>` : ""}</div>`).join("")}`;
+};
+const safePathValue = (obj, path, fallback) => {
+  return (
+    path
+      .split(".")
+      .reduce(
+        (acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined),
+        obj,
+      ) ?? fallback
+  );
+};
+const setPathValue = (obj, path, value) => {
+  const parts = path.split(".");
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!cur[parts[i]] || typeof cur[parts[i]] !== "object") cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = value;
+};
+const optionalAdminHtml = () => {
+  const toggles = [
+    ["assistant.enabled", "AI research assistant"],
+    ["currently.enabled", "Currently section"],
+    ["github.enabled", "GitHub activity"],
+    ["projects.enabled", "Projects section"],
+    ["reading.enabled", "Reading list"],
+    ["experiments.enabled", "Experiments"],
+    ["demos.enabled", "Interactive demos"],
+  ];
+  return `
+    <div class="it">
+      ${toggles.map(([path, label]) => `<div><label>${label}</label><input type="checkbox" data-opt="${path}" ${safePathValue(D, path, false) ? "checked" : ""}></div>`).join("")}
+      <div class="full"><label>Assistant title</label><input data-opt-field="assistant.title" value="${e(D.assistant.title || "")}"></div>
+      <div class="full"><label>Assistant prompt</label><input data-opt-field="assistant.prompt" value="${e(D.assistant.prompt || "")}"></div>
+      <div class="full"><label>Assistant endpoint (optional POST JSON; return an answer field)</label><input data-opt-field="assistant.endpoint" value="${e(D.assistant.endpoint || "")}"></div>
+      <div class="full"><label>Assistant status text</label><textarea data-opt-field="assistant.description" rows="2">${e(D.assistant.description || "")}</textarea></div>
+      <div class="full"><label>GitHub username</label><input data-opt-field="github.username" value="${e(D.github.username || "")}"></div>
+      <div class="full"><label>GitHub repo count</label><input data-opt-field="github.repoCount" value="${e(D.github.repoCount || "")}"></div>
+      <div class="full"><label>GitHub activity note</label><textarea data-opt-field="github.activityNote" rows="2">${e(D.github.activityNote || "")}</textarea></div>
+      <div class="full"><label>Projects (JSON array)</label><textarea data-opt-json="projects.items" rows="7">${e(JSON.stringify(D.projects.items || [], null, 2))}</textarea></div>
+      <div class="full"><label>Currently items (JSON array)</label><textarea data-opt-json="currently.items" rows="5">${e(JSON.stringify(D.currently.items || [], null, 2))}</textarea></div>
+      <div class="full"><label>Reading list items (JSON array)</label><textarea data-opt-json="reading.items" rows="5">${e(JSON.stringify(D.reading.items || [], null, 2))}</textarea></div>
+      <div class="full"><label>Experiments items (JSON array)</label><textarea data-opt-json="experiments.items" rows="5">${e(JSON.stringify(D.experiments.items || [], null, 2))}</textarea></div>
+      <div class="full"><label>Interactive demos JSON (kind, enabled, title, description, sampleText, textA, textB, words, weights)</label><textarea data-opt-json="demos.items" rows="9">${e(JSON.stringify(D.demos.items || [], null, 2))}</textarea></div>
+    </div>
+  `;
+};
 
 /* ---- PDF preview (shared by publications + blog editors) ---- */
 const pane = (val, attrs) =>
@@ -165,16 +933,56 @@ const R = {
   about: () => {
     const n = D.name.split(" ");
     return `<div class="about"><div class="prof">${D.photo ? `<img src="${e(D.photo)}" alt="${e(D.name)}">` : ""}<div class="soc">${socials()}</div></div><div style="flex:1;min-width:0"><h1 class="t"><b>${e(n[0])}</b> ${e(n.slice(1).join(" "))}</h1><div class="sub">${e(D.tagline)}</div>${bio()}</div></div>
-${H("star", "research interests")}<div>${(D.interests || "")
+${renderAssistantSection()}${renderCurrentlySection()}${H("star", "research interests")}<div>${(
+      D.interests || ""
+    )
       .split(/,\s*/)
       .map((t) => `<span class="tag">${e(t)}</span>`)
       .join(
         "",
-      )}</div>${H("cap", "affiliations")}<div class="aff">${affs()}</div>${H("news", "news")}${rows(D.news, (n) => `<div class="row"><div class="d">${e(n.date)}</div><div class="x">${e(n.text)}</div></div>`)}
-${H("book", "selected publications")}${rows(D.pubs.slice(0, 3), pubHtml)}`;
+      )}</div>${H("cap", "affiliations")}<div class="aff">${affs()}</div>${H("news", "news")}${rows(D.news, (n) => `<div class="row"><div class="d">${e(n.date)}</div><div class="x">${e(n.text)}</div></div>`)}${renderGitHubSection()}${renderProjectsSection()}${renderReadingList()}${renderExperimentsSection()}${renderDemoCards()}${H("book", "selected publications")}${rows(D.pubs.slice(0, 3), renderPubCard)}`;
   },
-  publications: () =>
-    `<h1 class="t">publications</h1><div class="sub">Peer-reviewed papers, listed by year.</div>${rows(D.pubs, pubHtml)}${D.scholar ? `<p style="margin-top:20px"><a href="${e(D.scholar)}" target="_blank" rel="noopener">See Google Scholar profile →</a></p>` : ""}`,
+  publications: (slug) => {
+    const pub = slug ? D.pubs.find((p) => getPubSlug(p) === slug) : null;
+    if (pub) return publicationPage(pub);
+    return renderPublicationList();
+  },
+  experiments: (slug) => {
+    const items = ((D.experiments && D.experiments.items) || []).filter(
+      (item) => item && (item.title || item.question || item.description),
+    );
+    const found = slug
+      ? items.find(
+          (item) =>
+            slugify(item.title || item.question || "experiment") === slug,
+        )
+      : null;
+    if (found) {
+      return `<div class="pub-detail"><a href="#experiments">← experiments</a><h1 class="t" style="margin-top:14px">${e(found.title || "Untitled experiment")}</h1>${[
+        ["Research question", found.question],
+        ["Description", found.description],
+        ["Dataset", found.dataset],
+        ["Model / algorithm", found.model],
+        ["Method", found.method],
+        ["Results", found.results],
+        ["Findings", found.findings],
+        ["Notes", found.notes],
+        ["Code", found.code],
+      ]
+        .filter(([, value]) => !!String(value || "").trim())
+        .map(
+          ([label, value]) =>
+            `<div class="section"><h3>${e(label)}</h3><div>${md(String(value))}</div></div>`,
+        )
+        .join(
+          "",
+        )}${renderChartHtml(found.resultsData || found.chart || found.results || null) ? `<div class="section"><h3>Results</h3>${renderChartHtml(found.resultsData || found.chart || found.results || null)}</div>` : ""}</div>`;
+    }
+    return renderExperimentList();
+  },
+  reading: () => renderReadingPage(),
+  projects: () => renderProjectsSection(true),
+  playground: () => renderDemoPlayground(),
   cv: () => `<h1 class="t">cv</h1><div class="sub np"><a href="#" onclick="print();return false">Download / print as PDF</a></div>
 ${H("cap", "Education")}${rows(D.education, (x) => `<div class="row"><div class="d">${e(x.period)}</div>${lg(x)}<div class="x"><b>${e(x.title)}</b><br>${e(x.place)}</div></div>`)}
 ${H("job", "Experience")}${rows(D.experience, (x) => `<div class="row"><div class="d">${e(x.period)}</div>${lg(x)}<div class="x"><b>${e(x.title)}</b>, ${e(x.place)}${x.desc ? `<br><span style="color:var(--mut)">${e(x.desc)}</span>` : ""}</div></div>`)}
@@ -225,7 +1033,7 @@ ${Object.keys(S)
           "",
         )}<button class="b" data-a="add" data-s="${s}">+ Add to ${s}</button>`,
   )
-  .join("")}</div>`;
+  .join("")}${optionalAdminHtml()}</div>`;
   },
 };
 function save(m) {
@@ -237,6 +1045,38 @@ function save(m) {
   }
   const s = $("#ms");
   if (s) s.textContent = m;
+}
+function bindOptionalAdmin() {
+  document.querySelectorAll("[data-opt]").forEach((el) => {
+    el.onchange = () => {
+      setPathValue(D, el.dataset.opt, el.checked);
+      save();
+      draw();
+    };
+  });
+  document.querySelectorAll("[data-opt-field]").forEach((el) => {
+    el.oninput = () => {
+      setPathValue(D, el.dataset.optField, el.value);
+      save();
+      draw();
+    };
+  });
+  document.querySelectorAll("[data-opt-json]").forEach((el) => {
+    el.onchange = () => {
+      try {
+        const parsed = JSON.parse(el.value);
+        setPathValue(
+          D,
+          el.dataset.optJson,
+          Array.isArray(parsed) ? parsed : [],
+        );
+        save();
+        draw();
+      } catch (x) {
+        el.style.borderColor = "#c33";
+      }
+    };
+  });
 }
 function bind() {
   document.querySelectorAll("[data-lg]").forEach(
@@ -309,6 +1149,7 @@ function bind() {
     r.onload = () => {
       try {
         D = Object.assign({}, DEF, JSON.parse(r.result));
+        ensureOptionalSections();
         save();
         draw();
       } catch (x) {
@@ -335,6 +1176,7 @@ function bind() {
     r.readAsDataURL(ev.target.files[0]);
   };
   bindPdf($("#app"));
+  bindOptionalAdmin();
 }
 /* ---- auth: hash comes from config.js (window.CFG.ADMIN_PW_HASH); Password tab can override locally ---- */
 const PW = (window.CFG || {}).ADMIN_PW_HASH;
@@ -642,6 +1484,7 @@ function draw() {
     isA = /\/admin\/?(index\.html)?$/.test(location.pathname),
     p = hp[0] || (isA ? "admin" : "about"),
     pg = R[p] ? p : "about";
+  syncOptionalNav();
   $("#app").innerHTML = R[pg](hp[1]);
   document.title = D.name + (pg == "about" ? "" : " | " + pg);
   $("#brand").innerHTML =
@@ -660,6 +1503,7 @@ function draw() {
     const passwordInput = !authed ? $("#pw") : atab == "sec" ? $("#np") : null;
     passwordInput?.focus();
   } else scrollTo(0, 0);
+  bindFeatureInteractions();
   tx();
 }
 addEventListener("hashchange", draw);
