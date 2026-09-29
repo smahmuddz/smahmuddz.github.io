@@ -646,8 +646,10 @@ function draw() {
   document.title = D.name + (pg == "about" ? "" : " | " + pg);
   $("#brand").innerHTML =
     `<b>${e(D.name.split(" ")[0])}</b> ${e(D.name.split(" ").slice(1).join(" "))}`;
-  $("#fn").textContent = D.name;
-  $("#fy").textContent = new Date().getFullYear();
+  const footerName = $("#fn"),
+    footerYear = $("#fy");
+  if (footerName) footerName.textContent = D.name;
+  if (footerYear) footerYear.textContent = new Date().getFullYear();
   document
     .querySelectorAll("nav a.l")
     .forEach((a) => a.classList.toggle("on", a.hash == "#" + pg));
